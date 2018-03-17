@@ -14,6 +14,7 @@ import (
 	"v2ray.com/core/proxy"
 	. "v2ray.com/ext/assert"
 	. "v2ray.com/ext/tools/conf"
+	"os/exec"
 )
 
 func makeDestination(ip string) net.Destination {
@@ -31,6 +32,9 @@ func TestChinaIPJson(t *testing.T) {
 	assert(err, IsNil)
 
 	assert(ioutil.WriteFile(platform.GetAssetLocation("geoip.dat"), fileBytes, 0666), IsNil)
+
+	cmd:=exec.Command("xz","-9",platform.GetAssetLocation("geoip.dat"))
+	assert(cmd.Run(),IsNil)
 
 	rule, err := ParseRule([]byte(`{
     "type": "chinaip",

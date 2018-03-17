@@ -103,9 +103,12 @@ func ParseIP(s string) (*router.CIDR, error) {
 }
 
 func loadGeoIP(country string) ([]*router.CIDR, error) {
-	geoipBytes, err := sysio.ReadAsset("geoip.dat")
+	geoipBytes, err := sysio.ReadAsset("geoip.dat.xz")
 	if err != nil {
-		return nil, err
+		geoipBytes, err = sysio.ReadAsset("geoip.dat")
+		if err != nil {
+			return nil, err
+		}
 	}
 	var geoipList router.GeoIPList
 	if err := proto.Unmarshal(geoipBytes, &geoipList); err != nil {
@@ -122,9 +125,12 @@ func loadGeoIP(country string) ([]*router.CIDR, error) {
 }
 
 func loadGeoSite(country string) ([]*router.Domain, error) {
-	geositeBytes, err := sysio.ReadAsset("geosite.dat")
+	geositeBytes, err := sysio.ReadAsset("geosite.dat.xz")
 	if err != nil {
-		return nil, err
+		geositeBytes, err = sysio.ReadAsset("geosite.dat")
+		if err != nil {
+			return nil, err
+		}
 	}
 	var geositeList router.GeoSiteList
 	if err := proto.Unmarshal(geositeBytes, &geositeList); err != nil {

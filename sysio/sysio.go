@@ -7,6 +7,10 @@ import (
 
 	"v2ray.com/core/common/buf"
 	"v2ray.com/core/common/platform"
+
+	"github.com/xi2/xz"
+	"strings"
+	"bytes"
 )
 
 type FileReaderFunc func(path string) (io.ReadCloser, error)
@@ -22,6 +26,17 @@ func ReadFile(path string) ([]byte, error) {
 	}
 	defer reader.Close()
 
+	if (strings.HasSuffix(path, ".xz")) {
+		dataBytes, err := buf.ReadAllToBytes(reader)
+		if err != nil {
+			return nil, err
+		}
+		r, err := xz.NewReader(bytes.NewReader(dataBytes), 0)
+		if err != nil {
+			return nil, err
+		}
+		return buf.ReadAllToBytes(r)
+	}
 	return buf.ReadAllToBytes(reader)
 }
 
