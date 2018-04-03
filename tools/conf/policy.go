@@ -5,10 +5,12 @@ import (
 )
 
 type Policy struct {
-	Handshake      *uint32 `json:"handshake"`
-	ConnectionIdle *uint32 `json:"connIdle"`
-	UplinkOnly     *uint32 `json:"uplinkOnly"`
-	DownlinkOnly   *uint32 `json:"downlinkOnly"`
+	Handshake         *uint32 `json:"handshake"`
+	ConnectionIdle    *uint32 `json:"connIdle"`
+	UplinkOnly        *uint32 `json:"uplinkOnly"`
+	DownlinkOnly      *uint32 `json:"downlinkOnly"`
+	StatsUserUplink   bool    `json:"statsUserUplink"`
+	StatsUserDownlink bool    `json:"statsUserDownlink"`
 }
 
 func (t *Policy) Build() (*policy.Policy, error) {
@@ -27,6 +29,10 @@ func (t *Policy) Build() (*policy.Policy, error) {
 	}
 	return &policy.Policy{
 		Timeout: config,
+		Stats: &policy.Policy_Stats{
+			UserUplink:   t.StatsUserUplink,
+			UserDownlink: t.StatsUserDownlink,
+		},
 	}, nil
 }
 
