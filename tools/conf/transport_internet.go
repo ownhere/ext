@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 
+	"v2ray.com/core/transport/internet/domainsocket"
+
 	"v2ray.com/core/common/serial"
 	"v2ray.com/core/transport/internet"
 	"v2ray.com/core/transport/internet/http"
@@ -161,14 +163,72 @@ func (c *HTTPConfig) Build() (*serial.TypedMessage, error) {
 	return serial.ToTypedMessage(config), nil
 }
 
-type TLSCertConfig struct {
-	CertFile string `json:"certificateFile"`
-	KeyFile  string `json:"keyFile"`
+type DomainSocketConfig struct {
+	Path     string `json:"path"`
+	Abstract bool   `json:"abstract"`
 }
+
+func (c *DomainSocketConfig) Build() (*serial.TypedMessage, error) {
+	return serial.ToTypedMessage(&domainsocket.Config{
+		Path:     c.Path,
+		Abstract: c.Abstract,
+	}), nil
+}
+
+type TLSCertConfig struct {
+	CertFile string   `json:"certificateFile"`
+	CertStr  []string `json:"certificate"`
+	KeyFile  string   `json:"keyFile"`
+	KeyStr   []string `json:"key"`
+	Usage    string   `json:"usage"`
+}
+
+func readFileOrString(f string, s []string) ([]byte, error) {
+	if len(f) > 0 {
+		return sysio.ReadFile(f)
+	}
+	if len(s) > 0 {
+		return []byte(strings.Join(s, "\n")), nil
+	}
+	return nil, newError("both file and bytes are empty.")
+}
+
+func (c *TLSCertConfig) Build() (*tls.Certificate, error) {
+	certificate := new(tls.Certificate)
+
+	cert, err := readFileOrString(c.CertFile, c.CertStr)
+	if err != nil {
+		return nil, newError("failed to parse certificate").Base(err)
+	}
+	certificate.Certificate = cert
+
+	if len(c.KeyFile) > 0 || len(c.KeyStr) > 0 {
+		key, err := readFileOrString(c.KeyFile, c.KeyStr)
+		if err != nil {
+			return nil, newError("failed to parse key").Base(err)
+		}
+		certificate.Key = key
+	}
+
+	switch strings.ToLower(c.Usage) {
+	case "encipherment":
+		certificate.Usage = tls.Certificate_ENCIPHERMENT
+	case "verify":
+		certificate.Usage = tls.Certificate_AUTHORITY_VERIFY
+	case "issue":
+		certificate.Usage = tls.Certificate_AUTHORITY_ISSUE
+	default:
+		certificate.Usage = tls.Certificate_ENCIPHERMENT
+	}
+
+	return certificate, nil
+}
+
 type TLSConfig struct {
 	Insecure   bool             `json:"allowInsecure"`
 	Certs      []*TLSCertConfig `json:"certificates"`
 	ServerName string           `json:"serverName"`
+	ALPN       *StringList      `json:"alpn"`
 }
 
 // Build implements Buildable.
@@ -176,23 +236,19 @@ func (c *TLSConfig) Build() (*serial.TypedMessage, error) {
 	config := new(tls.Config)
 	config.Certificate = make([]*tls.Certificate, len(c.Certs))
 	for idx, certConf := range c.Certs {
-		cert, err := sysio.ReadFile(certConf.CertFile)
+		cert, err := certConf.Build()
 		if err != nil {
-			return nil, newError("failed to load TLS certificate file: ", certConf.CertFile).Base(err).AtError()
+			return nil, err
 		}
-		key, err := sysio.ReadFile(certConf.KeyFile)
-		if err != nil {
-			return nil, newError("failed to load TLS key file: ", certConf.KeyFile).Base(err).AtError()
-		}
-		config.Certificate[idx] = &tls.Certificate{
-			Key:         key,
-			Certificate: cert,
-		}
+		config.Certificate[idx] = cert
 	}
 	serverName := c.ServerName
 	config.AllowInsecure = c.Insecure
 	if len(c.ServerName) > 0 {
 		config.ServerName = serverName
+	}
+	if c.ALPN != nil && len(*c.ALPN) > 0 {
+		config.NextProtocol = []string(*c.ALPN)
 	}
 	return serial.ToTypedMessage(config), nil
 }
@@ -210,19 +266,22 @@ func (p TransportProtocol) Build() (internet.TransportProtocol, error) {
 		return internet.TransportProtocol_WebSocket, nil
 	case "h2", "http":
 		return internet.TransportProtocol_HTTP, nil
+	case "ds", "domainsocket":
+		return internet.TransportProtocol_DomainSocket, nil
 	default:
 		return internet.TransportProtocol_TCP, newError("Config: unknown transport protocol: ", p)
 	}
 }
 
 type StreamConfig struct {
-	Network      *TransportProtocol `json:"network"`
-	Security     string             `json:"security"`
-	TLSSettings  *TLSConfig         `json:"tlsSettings"`
-	TCPSettings  *TCPConfig         `json:"tcpSettings"`
-	KCPSettings  *KCPConfig         `json:"kcpSettings"`
-	WSSettings   *WebSocketConfig   `json:"wsSettings"`
-	HTTPSettings *HTTPConfig        `json:"httpSettings"`
+	Network      *TransportProtocol  `json:"network"`
+	Security     string              `json:"security"`
+	TLSSettings  *TLSConfig          `json:"tlsSettings"`
+	TCPSettings  *TCPConfig          `json:"tcpSettings"`
+	KCPSettings  *KCPConfig          `json:"kcpSettings"`
+	WSSettings   *WebSocketConfig    `json:"wsSettings"`
+	HTTPSettings *HTTPConfig         `json:"httpSettings"`
+	DSSettings   *DomainSocketConfig `json:"dsSettings"`
 }
 
 // Build implements Buildable.
@@ -287,6 +346,16 @@ func (c *StreamConfig) Build() (*internet.StreamConfig, error) {
 		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
 			Protocol: internet.TransportProtocol_HTTP,
 			Settings: ts,
+		})
+	}
+	if c.DSSettings != nil {
+		ds, err := c.DSSettings.Build()
+		if err != nil {
+			return nil, newError("Failed to build DomainSocket config.").Base(err)
+		}
+		config.TransportSettings = append(config.TransportSettings, &internet.TransportConfig{
+			Protocol: internet.TransportProtocol_DomainSocket,
+			Settings: ds,
 		})
 	}
 	return config, nil
