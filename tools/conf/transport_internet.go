@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 
-	"v2ray.com/core/transport/internet/domainsocket"
-
 	"v2ray.com/core/common/serial"
 	"v2ray.com/core/transport/internet"
+	"v2ray.com/core/transport/internet/domainsocket"
 	"v2ray.com/core/transport/internet/http"
 	"v2ray.com/core/transport/internet/kcp"
 	"v2ray.com/core/transport/internet/tcp"
@@ -22,6 +21,7 @@ var (
 		"srtp":         func() interface{} { return new(SRTPAuthenticator) },
 		"utp":          func() interface{} { return new(UTPAuthenticator) },
 		"wechat-video": func() interface{} { return new(WechatVideoAuthenticator) },
+		"dtls":         func() interface{} { return new(DTLSAuthenticator) },
 	}, "type", "")
 
 	tcpHeaderLoader = NewJSONConfigLoader(ConfigCreatorCache{
@@ -225,10 +225,11 @@ func (c *TLSCertConfig) Build() (*tls.Certificate, error) {
 }
 
 type TLSConfig struct {
-	Insecure   bool             `json:"allowInsecure"`
-	Certs      []*TLSCertConfig `json:"certificates"`
-	ServerName string           `json:"serverName"`
-	ALPN       *StringList      `json:"alpn"`
+	Insecure        bool             `json:"allowInsecure"`
+	InsecureCiphers bool             `json:"allowInsecureCiphers"`
+	Certs           []*TLSCertConfig `json:"certificates"`
+	ServerName      string           `json:"serverName"`
+	ALPN            *StringList      `json:"alpn"`
 }
 
 // Build implements Buildable.
@@ -244,6 +245,7 @@ func (c *TLSConfig) Build() (*serial.TypedMessage, error) {
 	}
 	serverName := c.ServerName
 	config.AllowInsecure = c.Insecure
+	config.AllowInsecureCiphers = c.InsecureCiphers
 	if len(c.ServerName) > 0 {
 		config.ServerName = serverName
 	}
